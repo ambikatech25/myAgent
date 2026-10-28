@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Avobl</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2c.5 5.5 3 8 10 10-7 2-9.5 4.5-10 10-.5-5.5-3-8-10-10 7-2 9.5-4.5 10-10z' fill='%236d5efc'/></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- Left: conversation history -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="brand"><span class="brand-mark" data-icon="spark"></span>Avobl</div>
+        <button class="icon-btn" id="collapseSidebar" title="Close sidebar" data-icon="sidebar"></button>
+      </div>
+      <button class="new-chat" id="newChat"><span data-icon="plus"></span>New chat</button>
+      <nav class="chat-list" id="chatList"></nav>
+      <div class="sidebar-bottom">
+        <button class="side-btn" id="openSettings"><span data-icon="sliders"></span>Settings</button>
+        <div class="model-status" id="modelStatus"><span class="dot"></span><span id="modelStatusText">Connecting…</span></div>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <!-- Middle: the conversation -->
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="openSidebar" title="Open sidebar" data-icon="sidebar"></button>
+        <div class="chat-title" id="chatTitle">New chat</div>
+        <button class="icon-btn" id="toggleForm" title="Your form" data-icon="form"></button>
+      </header>
+
+      <section class="thread" id="thread">
+        <div class="empty" id="empty">
+          <div class="orb"></div>
+          <h1 id="greeting">Hello</h1>
+          <p>Ask anything, drop in an image, or paste your details to fill a form.</p>
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="Fill my form: I'm Rahul Verma from Pune. Email rahul.v@mail.com, phone 98200 12345.">
+              <span data-icon="form"></span><b>Fill a form</b><small>from a message or note</small>
+            </button>
+            <button class="suggestion" data-action="attach">
+              <span data-icon="image"></span><b>Analyse an image</b><small>insights on your parameters</small>
+            </button>
+            <button class="suggestion" data-prompt="Explain how a local AI model like you runs on my laptop, in simple words.">
+              <span data-icon="spark"></span><b>Explain simply</b><small>how local AI works</small>
+            </button>
+            <button class="suggestion" data-prompt="Make me a 4-week plan to learn JavaScript, one short goal per day.">
+              <span data-icon="list"></span><b>Make a plan</b><small>4 weeks of JavaScript</small>
+            </button>
+          </div>
+        </div>
+        <div class="messages" id="messages"></div>
+      </section>
+
+      <div class="composer-wrap">
+        <form class="composer" id="composer">
+          <div class="attachments" id="attachments" hidden></div>
+          <textarea id="input" rows="1" placeholder="Message Avobl…" autocomplete="off"></textarea>
+          <div class="composer-row">
+            <label class="icon-btn" title="Attach image">
+              <span data-icon="clip"></span>
+              <input type="file" id="fileInput" accept="image/*" multiple hidden>
+            </label>
+            <span class="hint">Enter to send · Shift + Enter for a new line · paste or drop images</span>
+            <button type="submit" class="send-btn" id="sendBtn" title="Send" disabled data-icon="arrowUp"></button>
+          </div>
+        </form>
+        <p class="disclaimer">Runs entirely on your computer. Answers can be wrong.</p>
+      </div>
+    </main>
+
+    <!-- Right: the form the assistant fills (stand-in for your website's form) -->
+    <aside class="form-panel" id="formPanel" hidden>
+      <header>
+        <h2>Your form</h2>
+        <button class="icon-btn" id="closeForm" title="Close" data-icon="x"></button>
+      </header>
+      <form id="demoForm" class="demo-form"></form>
+      <button class="btn ghost" id="clearForm" type="button">Clear form</button>
+    </aside>
+  </div>
+
+  <div class="drop-overlay" id="dropOverlay" hidden><div><span data-icon="image"></span>Drop images to attach</div></div>
+
+  <dialog class="modal" id="settings">
+    <form method="dialog" id="settingsForm">
+      <h2>Settings</h2>
+      <label class="field">
+        <span>Form fields</span>
+        <small>Filled automatically when you share details. Separate with commas.</small>
+        <textarea name="fields" rows="2"></textarea>
+      </label>
+      <label class="field">
+        <span>Image insight parameters</span>
+        <small>What every image gets checked for. Separate with commas.</small>
+        <textarea name="parameters" rows="2"></textarea>
+      </label>
+      <label class="field">
+        <span>Theme</span>
+        <select name="theme">
+          <option value="auto">Match system</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <p class="models-info">Text: <code id="textModel">–</code> · Vision: <code id="visionModel">–</code></p>
+      <div class="modal-actions">
+        <button class="btn ghost" value="cancel">Cancel</button>
+        <button class="btn primary" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="lightbox" id="lightbox"><img alt=""></dialog>
+
+  <script src="/vendor/marked/marked.umd.js"></script>
+  <script src="/vendor/dompurify/purify.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
