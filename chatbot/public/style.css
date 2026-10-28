@@ -276,6 +276,8 @@ svg { width: 18px; height: 18px; flex: none; display: block; }
 .typing span:nth-child(3) { animation-delay: 0.3s; }
 @keyframes bounce { 0%, 80%, 100% { opacity: 0.35; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-4px); } }
 
+.load-status { font-size: 13px; color: var(--muted); margin-top: -2px; }
+
 /* Markdown answer */
 .markdown { overflow-wrap: anywhere; }
 .markdown > :first-child { margin-top: 0; }

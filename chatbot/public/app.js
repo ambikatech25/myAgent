@@ -192,8 +192,10 @@ function paintAssistant(view, msg, streaming) {
   }
 
   if (msg.content) view.content.innerHTML = renderMarkdown(msg.content);
-  else if (streaming && !msg.thinking && !msg.form) view.content.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
-  else view.content.innerHTML = "";
+  else if (streaming && !msg.thinking && !msg.form) {
+    view.content.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+    if (msg.status) view.content.append(h("div", "load-status", msg.status));
+  } else view.content.innerHTML = "";
 
   view.extras.innerHTML = "";
   if (msg.form) view.extras.append(formCard(msg.form));
@@ -207,7 +209,7 @@ function paintAssistant(view, msg, streaming) {
     const text = msg.content || (msg.form ? JSON.stringify(msg.form, null, 2) : "");
     if (text) view.actions.append(iconButton("copy", "Copy", (btn) => copyText(text, btn)));
     view.actions.append(iconButton("retry", "Regenerate", () => regenerate(msg)));
-    const meta = [msg.model, msg.stats?.tokensPerSec && `${msg.stats.tokensPerSec} tok/s`, msg.stats?.seconds && `${msg.stats.seconds}s`];
+    const meta = [msg.model, msg.route, msg.stats?.tokensPerSec && `${msg.stats.tokensPerSec} tok/s`, msg.stats?.seconds && `${msg.stats.seconds}s`];
     view.actions.append(h("span", "msg-meta", meta.filter(Boolean).join(" · ")));
   }
 }
@@ -352,7 +354,8 @@ async function respond(chat) {
       signal: controller.signal,
     });
     for await (const event of readEvents(res)) {
-      if (event.type === "meta") reply.model = event.model;
+      if (event.type === "meta") { reply.model = event.model; reply.route = event.reason; }
+      else if (event.type === "status") reply.status = event.text;
       else if (event.type === "thinking") { thinkStart ??= performance.now(); reply.thinking += event.text; }
       else if (event.type === "content") { endThinking(); reply.content += event.text; }
       else if (event.type === "form") { endThinking(); reply.form = { ...reply.form, ...event.data }; fillForm(reply.form); }
@@ -365,6 +368,7 @@ async function respond(chat) {
     else reply.error = "Lost connection to the server. Is `npm start` still running?";
   }
   endThinking();
+  delete reply.status;
   if (!reply.content && !reply.form && !reply.error && !reply.stopped) reply.error = "The model returned an empty answer. Try again.";
   controller = null;
   paintAssistant(view, reply, false);
@@ -550,9 +554,11 @@ async function connect() {
   const status = $("#modelStatus");
   try {
     const { models } = await (await fetch("/api/config")).json();
-    $("#modelStatusText").textContent = `${models.text} · ${models.vision}`;
-    $("#textModel").textContent = models.text;
-    $("#visionModel").textContent = models.vision;
+    const name = (m) => m ?? "not installed";
+    $("#modelStatusText").textContent = "Auto: picks a model per message";
+    $("#mainModel").textContent = name(models.main);
+    $("#fastModel").textContent = name(models.fast);
+    $("#visionModel").textContent = name(models.vision);
     status.classList.add("online");
     fetch("/api/warmup", { method: "POST" }); // preload the model while you type
   } catch {
