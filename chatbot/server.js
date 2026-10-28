@@ -1,13 +1,8 @@
 import express from "express";
+import { route, resolveModels, THINK_OFF } from "./router.js";
 
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
 const PORT = process.env.PORT || 3000;
-
-// Swap models without touching code: set TEXT_MODEL / VISION_MODEL before `npm start`.
-const MODELS = {
-  text: process.env.TEXT_MODEL || "qwen3:4b",
-  vision: process.env.VISION_MODEL || "qwen2.5vl:3b",
-};
 const MAX_HISTORY = 20; // older messages are dropped so prompts stay small and fast
 
 const app = express();
@@ -17,24 +12,19 @@ app.use(express.static("public"));
 app.use("/vendor/marked", express.static("node_modules/marked/lib"));
 app.use("/vendor/dompurify", express.static("node_modules/dompurify/dist"));
 
-// No mode switch any more: if the conversation contains an image, the vision model answers.
-function pickModel(messages) {
-  return messages.some((m) => m.images?.length) ? MODELS.vision : MODELS.text;
-}
-
 // How the vision model should report on an image, given the parameters set in Settings.
 function imageInstructions(parameters) {
   // TODO(human): turn `parameters` into instructions for how insights are presented.
   return parameters.length ? `When analysing an image, cover: ${parameters.join(", ")}.` : "";
 }
 
-function systemPrompt({ vision, fields, parameters }) {
+function systemPrompt({ role, fields, parameters }) {
   const lines = [
     "You are Avobl, a warm, capable personal assistant running locally on the user's computer.",
     "Use Markdown (short headings, lists, tables, code blocks) when it makes answers easier to read. Keep answers focused.",
   ];
-  if (vision) lines.push(imageInstructions(parameters));
-  else if (fields.length) {
+  if (role === "vision") lines.push(imageInstructions(parameters));
+  if (role === "main" && fields.length) {
     lines.push(
       "When the user shares personal or contact details, or asks you to fill a form, call the fill_form tool.",
       "Only pass values that are clearly in the conversation. Never invent values.",
@@ -58,38 +48,61 @@ function fillFormTool(fields) {
   };
 }
 
-app.get("/api/config", (req, res) => res.json({ models: MODELS }));
+app.get("/api/config", async (req, res) => {
+  try {
+    res.json({ models: await resolveModels() });
+  } catch {
+    res.status(503).json({ error: "Can't reach Ollama." });
+  }
+});
 
-// Load the text model into RAM as soon as the page opens, so the first reply skips the ~10s load.
+// Load the main model into RAM as soon as the page opens, so the first reply skips the load time.
 app.post("/api/warmup", async (req, res) => {
-  fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    body: JSON.stringify({ model: MODELS.text, keep_alive: "30m" }),
-  }).catch(() => { });
   res.sendStatus(204);
+  const { main } = await resolveModels().catch(() => ({}));
+  if (main) fetch(`${OLLAMA_URL}/api/generate`, { method: "POST", body: JSON.stringify({ model: main, keep_alive: "30m" }) }).catch(() => {});
 });
 
 app.post("/api/chat", async (req, res) => {
   const { messages = [], fields = [], parameters = [] } = req.body;
-  const history = messages.slice(-MAX_HISTORY).map(({ role, content, images }) =>
-    images?.length ? { role, content, images } : { role, content });
-  const model = pickModel(history);
-  const vision = model === MODELS.vision;
+  const history = messages.slice(-MAX_HISTORY);
+
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  const emit = (event) => res.write(JSON.stringify(event) + "\n");
+
+  let decision;
+  try {
+    decision = await route(history, fields);
+  } catch {
+    emit({ type: "error", message: "Can't reach Ollama. Make sure it's running." });
+    return res.end();
+  }
+  const { role, reason, model, needsLoad } = decision;
+  if (!model) {
+    emit({ type: "error", message: `No ${role} model is installed. Pull one with \`ollama pull\` (see PLAN.md).` });
+    return res.end();
+  }
+
+  // Text-only models reject images, so earlier images are swapped for a short note.
+  const cleaned = history.map(({ role: r, content, images }) => {
+    if (!images?.length) return { role: r, content };
+    return role === "vision" ? { role: r, content, images } : { role: r, content: `${content}\n[an image was attached here]` };
+  });
 
   const body = {
     model,
-    messages: [{ role: "system", content: systemPrompt({ vision, fields, parameters }) }, ...history],
+    messages: [{ role: "system", content: systemPrompt({ role, fields, parameters }) }, ...cleaned],
     stream: true,
     keep_alive: "30m",
   };
-  if (!vision && fields.length) body.tools = [fillFormTool(fields)];
+  if (role === "main" && fields.length) body.tools = [fillFormTool(fields)];
+  if (THINK_OFF.has(model)) body.think = false;
 
   const abort = new AbortController();
   res.on("close", () => abort.abort()); // Stop button or closed tab: stop generating
 
-  // We stream our own NDJSON events to the browser: one {type, ...} object per line.
-  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
-  const emit = (event) => res.write(JSON.stringify(event) + "\n");
+  emit({ type: "meta", model, role, reason });
+  if (needsLoad) emit({ type: "status", text: `Loading ${model}…` });
 
   let upstream;
   try {
@@ -108,7 +121,6 @@ app.post("/api/chat", async (req, res) => {
     return res.end();
   }
 
-  emit({ type: "meta", model });
   const decoder = new TextDecoder();
   let buffer = "";
   try {
